@@ -1,24 +1,25 @@
+#include "../../os/ktest/ktest.h"
 #include "../lib/user.h"
 
 void worker() {
-    for (int i = 0; i < 200; i++) {
+    unsigned long long cnt = 0;
+    for (int i = 0; i < 300; i++) {
         // printf("worker %d: %d\n", getpid(), i);
 
-        for (long j = 0; j < 5000000; j++) {
+        for (long j = 0; j < 10000000; j++) {
             asm volatile("" : : : "memory");
+            cnt++;
             // do nothing
         }
-
-        sleep(1);
 
         // sleep(100);
     }
 }
 
 uint64 rtime() {
-    uint64 x;
-    asm volatile("csrr %0, time" : "=r"(x));
-    return x;
+    // uint64 x;
+    // asm volatile("csrr %0, time" : "=r"(x));
+    return ktest(KTEST_GET_TICKS, 0, 0);
 }
 
 #define NTIMES 10
@@ -44,18 +45,20 @@ int main(void) {
             if (pid == 0) {
                 // child process
 
-                // set priority
-                setpriority(i);  // 0 - 7
-                printf("worker %d: priority %d\n", getpid(), i);
+                // set priority, i:[0-7]
+                // May 7th Revision: make priority in the reverse order regarding the pid
+                setpriority(7 - i);
+                printf("worker %d: priority %d\n", getpid(), 7 - i);
+                yield();
 
                 uint64 start = rtime();
-                printf("worker %d: starts at %d\n", getpid(), start);
+                printf("worker %d: starts at %l\n", getpid(), start);
                 worker();
                 uint64 end = rtime();
-                printf("worker %d: exits  at %d\n", getpid(), end);
+                printf("worker %d: exits  at %l\n", getpid(), end);
 
                 // calculate the time used as the exit code
-                int used = (end - start) / 10000;
+                int used = end - start;
                 exit(used);
             } else {
                 // parent
@@ -75,14 +78,32 @@ int main(void) {
             }
         }
 
-        // check results: lower priority should take shorter time
+        // check results: lower pid (higher `priority` value) should take more time
         for (int i = 0; i < NPROCS; i++) {
-            printf("schedtest: worker %d: pid %d used %d time\n", i, results[i].pid, results[i].timeused);
+            printf("schedtest: worker pid %d: used %d time\n", results[i].pid, results[i].timeused);
         }
-        for (int i = 0; i < NPROCS - 1; i++) {
-            // we allow some error (50 time units)
-            assert(results[i].timeused <= results[i + 1].timeused + 50);
+        // finally there should be a significant gap between the first and the last
+        assert(results[0].timeused >= results[NPROCS - 1].timeused + 30);
+
+        // calculate the slope via the least squares method:
+
+        long avg_t = 0, avg_y = 0;
+        for (int i = 0; i < NPROCS; i++) {
+            avg_t += i * 10;
+            avg_y += results[i].timeused;
         }
+        avg_t /= NPROCS;
+        avg_y /= NPROCS;
+
+        long b = 0, denom = 0;
+        for (int i = 0; i < NPROCS; i++) {
+            b += (i * 10 - avg_t) * (results[i].timeused - avg_y);
+            denom += (i * 10 - avg_t) * (i * 10 - avg_t);
+        }
+        int final = (b * 10000) / denom;
+        printf("schedtest: final slope: %d\n", final);
+
+        assert(final < 0 && -final >= 8000);
     }
 
     printf("\n\n===\nschedtest: 10-times tests passed\n===\n\n");

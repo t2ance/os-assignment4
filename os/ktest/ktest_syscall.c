@@ -1,5 +1,6 @@
 #include "defs.h"
 #include "ktest.h"
+#include "trap.h"
 
 extern int64 freepages_count;
 extern allocator_t kstrbuf;
@@ -17,6 +18,8 @@ uint64 ktest_syscall(uint64 args[6]) {
             return freepages_count;
         case KTEST_GET_NRSTRBUF:
             return kstrbuf.available_count;
+        case KTEST_GET_TICKS:
+            return ticks;
     }
     return 0;
 }

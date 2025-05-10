@@ -138,3 +138,18 @@ user:
 
 test: user run
 
+
+REPORT := report.pdf
+
+handin:
+ifeq (,$(wildcard $(REPORT)))
+	@echo
+	@echo "report.pdf does not exist";
+	@echo
+	@exit 1
+endif
+	rm -rf handin.zip
+	zip -r handin.zip report.pdf os
+	@echo
+	@echo Upload the handin.zip to blackboard.
+	@echo
